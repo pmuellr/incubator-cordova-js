@@ -89,11 +89,17 @@ module.exports = {
     },
 
     bundle: function (platform) {
+        var path = require('path');
+
+        var outputDir = path.join(__dirname, "../pkg");
+        var outputFile = path.join(outputDir, "cordova." + platform + ".js");
+        console.log("building platform: " + platform);
+        
         var output = "";
 
         //include LICENSE
-        output += include("LICENSE", function (file) {
-            return "/*\n" + file + "\n*/\n";
+        output += include("LICENSE-for-js-file.txt", function (file) {
+            return "/*\n" + file + "*/\n";
         });
 
         //include modules
@@ -109,6 +115,6 @@ module.exports = {
         // files
         output += include('lib/bootstrap/' + platform + '.js');
 
-        fs.writeFileSync(__dirname + "/../pkg/cordova." + platform + ".js", output);
+        fs.writeFileSync(outputFile, output);
     }
 };

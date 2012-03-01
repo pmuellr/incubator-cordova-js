@@ -4,7 +4,7 @@ desc("runs build");
 task('default', ['build', 'test'], function () {});
 
 desc("clean");
-task('clean', [], function () {
+task('clean', ['set-cwd'], function () {
     var childProcess = require('child_process');
     var path = require("path");
     
@@ -27,12 +27,21 @@ task('build', ['clean'], function () {
     packager.bundle("ios");
     packager.bundle("wp7");
     packager.bundle("android");
+    packager.bundle("errgen");
 
     util.puts(fs.readFileSync("build/dalek", "utf-8"));
 });
 
 desc("runs the unit tests in node");
-task('test', [], require('./test/runner').node);
+task('test', ['set-cwd'], require('./test/runner').node);
 
 desc("starts a webserver to point at to run the unit tests");
-task('btest', [], require('./test/runner').browser);
+task('btest', ['set-cwd'], require('./test/runner').browser);
+
+desc("make sure we're in the right directory");
+task('set-cwd', [], function() {
+    if (__dirname != process.cwd()) {
+        process.chdir(__dirname)
+    }
+});
+
