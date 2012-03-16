@@ -42,6 +42,11 @@ task('test', ['set-cwd'], require('./test/runner').node);
 desc("starts a webserver to point at to run the unit tests");
 task('btest', ['set-cwd'], require('./test/runner').browser);
 
+desc("build graphviz pictures")
+task('graphviz', ['set-cwd'], function() {
+    require('./build/gv-requires')
+})
+
 desc("make sure we're in the right directory");
 task('set-cwd', [], function() {
     if (__dirname != process.cwd()) {

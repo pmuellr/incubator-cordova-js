@@ -21,22 +21,25 @@
 
 fs   = require('fs')
 path = require('path')
+exec = require('child_process').exec
 
 //------------------------------------------------------------------------------
-process.chdir(path.join(__dirname, ".."))
+process.chdir(path.join(__dirname, '..'))
+
+if (!path.existsSync('tmp')) {
+    fs.mkdirSync('tmp')
+}
 
 var platforms = getPlatforms()
 
-console.log("//-------------------------------------------------------")
-console.log("// graphviz .dot file for cordova requires by platform")
-console.log("// http://www.graphviz.org/")
-console.log("// ")
-console.log("//   - ./build/gv-requires.js > ~/tmp/requires.dot")
-console.log("//   - [edit dot file to leave just one digraph]")
-console.log("//   - dot -Tsvg ~/tmp/requires.dot > ~/tmp/requires.svg")
-console.log("//   - [open svg file in a browser]")
-console.log("//-------------------------------------------------------")
-console.log("")
+allLines = []
+allFound = {}
+
+allLines.push('//-------------------------------------------------------')
+allLines.push('// graphviz .dot file for cordova')
+allLines.push('//-------------------------------------------------------')
+allLines.push('')
+allLines.push('digraph cordova {')
 
 for (var i=0; i<platforms.length; i++) {
     var platform = platforms[i]
@@ -44,9 +47,39 @@ for (var i=0; i<platforms.length; i++) {
     generateGraph(platform)
 }
 
+allLines.push('}')
+
+dotFile = path.join('tmp', 'all-cordova.dot')
+svgFile = path.join('tmp', 'all-cordova.svg')
+
+console.log('writing file: ' + dotFile)
+fs.writeFileSync(dotFile, allLines.join('\n'))
+
+dot2svg(dotFile, svgFile)
+
+//------------------------------------------------------------------------------
+oFile = path.join('tmp', 'requires.html')
+oLines = []
+
+oLines.push('<h1>cordova module dependency pictures</h1>')
+oLines.push('<ul>')
+
+oLines.push('<li><a href="all-cordova.svg"> everthing </a>')
+
+for (var i=0; i<platforms.length; i++) {
+    var platform = platforms[i]
+    
+    oLines.push('<li><a href="' + platform + '-requires.svg">' + platform + '</a>')
+}
+
+oLines.push('</ul>')
+
+console.log('writing file: ' + oFile)
+fs.writeFileSync(oFile, oLines.join('\n'))
+
 //------------------------------------------------------------------------------
 function getPlatforms() {
-    var entries = fs.readdirSync("pkg")
+    var entries = fs.readdirSync('pkg')
     
     var platforms = []
     
@@ -64,18 +97,23 @@ function getPlatforms() {
 //------------------------------------------------------------------------------
 function generateGraph(platform) {
     var modules = {}
+    var dotFile = path.join('tmp/', platform + '-requires.dot')
+    var svgFile = path.join('tmp/', platform + '-requires.svg')
+    var oLines  = []
     
-    var jsFile = path.join("pkg", "cordova." + platform + ".js")
+    var jsFile = path.join('pkg', 'cordova.' + platform + '.js')
     
     contents = fs.readFileSync(jsFile, 'utf-8')
     contents = contents.replace(/\n/g, ' ')
     
     modulesSource = contents.split(/define\(/)
     
-    console.log("//--------------------------------------------------")
-    console.log("// graphviz .dot file for " + platform)
-    console.log("//--------------------------------------------------")
-    console.log("digraph G {")
+    oLines.push('//-------------------------------------------------------')
+    oLines.push('// graphviz .dot file for ' + platform)
+    oLines.push('// dot -Tsvg -o' + path.basename(svgFile) + ' ' + path.basename(dotFile))
+    oLines.push('//-------------------------------------------------------')
+    oLines.push('')
+    oLines.push('digraph ' + platform + '{')
     
     for (var i=0; i< modulesSource.length; i++) {
         var moduleSource = modulesSource[i];
@@ -87,29 +125,57 @@ function generateGraph(platform) {
         moduleSource   = match[2]
         
         if (moduleName.match(/\s/)) continue
-        if (moduleName   == "")     continue
-        if (moduleSource == "")     continue
+        if (moduleName   == '')     continue
+        if (moduleSource == '')     continue
 
         modules[moduleName] = modules[moduleName] || []
-        // console.log("   found module " + moduleName)
+        // console.log('   found module ' + moduleName)
         
-        var requires = getRequires(moduleSource, modules[moduleName])
+        var requires = getRequires(moduleSource)
+        
+        // console.log("module: " + moduleName) 
+        // for (var j=0; j < requires.length; j++) {
+        //     console.log("    " + requires[j])
+        // }
         
         for (var j=0; j < requires.length; j++) {
             var gvModule  =  moduleName.replace(/\//g, '\\n')
             var gvRequire = requires[j].replace(/\//g, '\\n')
             
-            console.log('   "' + gvModule + '" -> "' + gvRequire + '";')
+            oLines.push(  '   "' + gvModule + '" -> "' + gvRequire + '";')
+            
+            allKey = gvModule + '->' + gvRequire
+            if (allFound[allKey]) continue
+            
+            allFound[allKey] = true
+            allLines.push('   "' + gvModule + '" -> "' + gvRequire + '";')
         }
-        
     }
 
-    console.log("}")
-    console.log("")
+    oLines.push('}')
+    
+    console.log('writing file: ' + dotFile)
+    fs.writeFileSync(dotFile, oLines.join('\n'))
+    
+    dot2svg(dotFile, svgFile)
 }
 
 //------------------------------------------------------------------------------
-function getRequires(moduleSource, requires) {
+function dot2svg(iFile, oFile) {
+    cmd = 'dot -Tsvg -o' + oFile + ' ' + iFile
+          
+    console.log('running cmd:  ' + cmd)
+    exec(cmd, function(error, stdout, stderr) {
+//        if (error) 
+//            console.log('error: "' + error + '" running "' + cmd + '"')
+            
+//        if (stdout) console.log(stdout)
+        if (stderr) console.log(trim(stderr))
+    })
+}
+
+//------------------------------------------------------------------------------
+function getRequires(moduleSource) {
     var pattern = /.*?require\((.*?)\)(.*)/
 
     var result = []
@@ -118,11 +184,13 @@ function getRequires(moduleSource, requires) {
     var match = moduleSource.match(pattern)
     
     while (match) {
-        var require  = match[1]
+        var require  = trim(match[1])
         moduleSource = match[2]
         
-        require = require.replace(/'|"/g, '')
-        result.push(require)
+        if (require.match(/(^'.*'$)|(^".*"$)/)) {
+            require = require.replace(/'|"/g, '')
+            result.push(require)
+        }
         
         match = moduleSource.match(pattern)
     }
@@ -130,4 +198,8 @@ function getRequires(moduleSource, requires) {
     return result
 }
 
+//------------------------------------------------------------------------------
+function trim(string) {
+    return string.replace(/(^\s+)|(\s+$)/g,'')
+}
     
